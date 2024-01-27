@@ -44,65 +44,52 @@ const token = new SkyWayAuthToken({
 }).encode('6YyryhrsxWwHRZNBu2yt3prX+IsXARoruwRr4dacf/E=');
 
 (async () => {
-  const localVideo = document.getElementById('local-video');
-  const buttonArea = document.getElementById('button-area');
-  const remoteMediaArea = document.getElementById('remote-media-area');
-  const roomNameInput = document.getElementById('room-name');
+    const videoContainer = document.getElementById('video-container');
+    let videoCount = 0;
 
-  const myId = document.getElementById('my-id');
-  const joinButton = document.getElementById('join');
+    const { audio, video } = await SkyWayStreamFactory.createMicrophoneAudioAndCameraStream();
 
-  const { audio, video } =
-    await SkyWayStreamFactory.createMicrophoneAudioAndCameraStream();
-  video.attach(localVideo);
-  await localVideo.play();
-
-  joinButton.onclick = async () => {
-    if (roomNameInput.value === '') return;
-
+    const fixedRoomName = 'akari';
     const context = await SkyWayContext.Create(token);
     const room = await SkyWayRoom.FindOrCreate(context, {
-      type: 'p2p',
-      name: roomNameInput.value,
+        type: 'sfu',
+        name: fixedRoomName,
     });
     const me = await room.join();
-
-    myId.textContent = me.id;
 
     await me.publish(audio);
     await me.publish(video);
 
-    const subscribeAndAttach = (publication) => {
-      if (publication.publisher.id === me.id) return;
+    const autoSubscribeAndAttach = async (publication) => {
+        if (videoCount >= 4) return;
 
-      const subscribeButton = document.createElement('button');
-      subscribeButton.textContent = `${publication.publisher.id}: ${publication.contentType}`;
-      buttonArea.appendChild(subscribeButton);
-
-      subscribeButton.onclick = async () => {
         const { stream } = await me.subscribe(publication.id);
-
-        let newMedia;
-        switch (stream.track.kind) {
-          case 'video':
-            newMedia = document.createElement('video');
-            newMedia.playsInline = true;
-            newMedia.autoplay = true;
-            break;
-          case 'audio':
-            newMedia = document.createElement('audio');
-            newMedia.controls = true;
-            newMedia.autoplay = true;
-            break;
-          default:
-            return;
+        
+        // ストリームの種類に応じた処理
+        if (stream.track.kind === 'video') {
+            const videoWrapper = createVideoWrapper();
+            const newVideo = document.createElement('video');
+            newVideo.playsInline = true;
+            newVideo.autoplay = true;
+            videoWrapper.appendChild(newVideo);
+            videoContainer.appendChild(videoWrapper);
+            stream.attach(newVideo);
+            videoCount++;
+        } else if (stream.track.kind === 'audio') {
+            // オーディオストリームの場合はビデオ要素は作成しない
+            const newAudio = document.createElement('audio');
+            newAudio.autoplay = true;
+            stream.attach(newAudio);
+            // newAudio要素はUIには表示されない
         }
-        stream.attach(newMedia);
-        remoteMediaArea.appendChild(newMedia);
-      };
     };
 
-    room.publications.forEach(subscribeAndAttach);
-    room.onStreamPublished.add((e) => subscribeAndAttach(e.publication));
-  };
+    room.publications.forEach(autoSubscribeAndAttach);
+    room.onStreamPublished.add((e) => autoSubscribeAndAttach(e.publication));
 })();
+
+function createVideoWrapper() {
+    const videoWrapper = document.createElement('div');
+    videoWrapper.className = 'video-wrapper';
+    return videoWrapper;
+}
